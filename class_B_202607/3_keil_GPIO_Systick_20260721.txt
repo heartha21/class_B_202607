@@ -1,0 +1,2340 @@
+﻿
+#include <stm32f10x_lib.h>                        // STM32F10x Library Definitions
+#include "STM32_Init.h"                           // STM32 Initialization
+
+#include <stdio.h>
+
+#include<stdarg.h>
+
+void Delay(unsigned int nTime);
+	
+void charLCD_sting(char *string);
+	
+void printf_lcd(char *format, ...)
+{
+	char buf[512];
+	va_list arglist;
+
+	va_start(arglist, format);
+	vsprintf(buf, format, arglist);
+	va_end(arglist);
+	charLCD_sting(buf);
+}
+
+
+//#ifdef __GNUC__
+//  /* With GCC/RAISONANCE, small printf (option LD Linker->Libraries->Small printf
+//     set to 'Yes') calls __io_putchar() */
+//  #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+//#else
+//  #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+//#endif /* __GNUC__ */
+//	
+//PUTCHAR_PROTOTYPE
+//{
+//	while(!(USART1->SR & (0x01 << 7) ) );
+//	USART1->DR = (unsigned char)ch;
+
+//  return ch;
+//}
+
+
+// int fputc(int ch, FILE *f)
+// {
+// 	while(!(USART1->SR & (0x01 << 7) ) );
+// 	USART1->DR = (unsigned char)ch;
+
+//   return ch;
+// }
+
+
+
+	
+int rem_count1 = 0;
+
+#define backlight_on()	GPIOE->ODR |= (0x01 << 5);
+#define backlight_off()	GPIOE->ODR &= ~(0x01 << 5);
+
+unsigned int curr_millis = 0;
+unsigned long prev_millis_button = 0;
+unsigned long prev_millis_pwm = 0;
+unsigned long prev_millis_pwm_led = 0;
+unsigned long prev_millis_bl_touch = 0;
+unsigned long prev_millis_bl_touch_switch = 0;
+
+int backlignt_pwm_duty = 20;
+int led_pwm_duty = 20;
+			
+char	bl_touch_toggle = 0;
+
+				
+// PE.4
+void led_on()
+{
+	GPIOE->ODR |= (0x01 << 4);
+}
+
+void led_off()
+{
+	GPIOE->ODR &= ~(0x01 << 4);
+}
+
+// PC.6
+void bl_touch_high()
+{
+	GPIOC->ODR |= (0x01 << 6);
+}
+
+void bl_touch_low()
+{
+	GPIOC->ODR &= ~(0x01 << 6);
+}
+
+
+/*----------------------------------------------------------*\
+ | HARDWARE DEFINE                                          |
+\*----------------------------------------------------------*/
+#define LED             ( 1 << 5 )                // PB5: LED D2
+#define LED6            ( 1 << 6 )                // PB5: LED D2
+#define LED7            ( 1 << 7 )                // PB5: LED D2
+
+
+
+#define GPIOA_CRL	*((volatile int *)0x40010800)
+#define GPIOA_IDR		*((volatile int *)0x40010808)	
+#define GPIOA_ODR	*((volatile int *)0x4001080C)	
+
+
+void Delay_count(vu32 nCount) {
+  for(; nCount != 0; nCount--);
+  }
+
+	
+	void Delay_us(int count_us) {
+		int i, j;
+		for(j=0;j<count_us;j++)
+			for(i=0; i<14; i++);
+  }
+
+//	void Delay_ms(int count_ms)
+//	{
+//		int i;
+//		for(i=0;i<count_ms;i++)
+//			Delay_us(1000);
+//	}
+	
+	void Delay_ms(int ms)
+	{
+			Delay(100*ms);
+	}
+	
+unsigned 	int test=5;
+	
+//===============================
+int i,j;
+
+volatile unsigned int TimingDelay;	
+volatile unsigned long sys_count;
+
+unsigned long c_mic;
+unsigned long p_mic1;
+unsigned long p_mic2;
+
+int led_toggle = 0;
+
+int count_pwm = 0;
+int pwm_duty = 20;
+
+int count_servo = 0;
+int servo_duty = 700;
+
+unsigned long rising_time = 0;
+unsigned long falling_time = 0;
+unsigned long diff_time = 0;
+
+unsigned long remocon_time[40];
+unsigned int remocon_diff_time[40];
+unsigned int remocon_data_bit[40];
+
+int rem_count = 0;
+
+int remocon_hex_data;
+int remocon_flag = 0;
+char remocon_data=0;
+
+char rem_data[10] = {0x68,0x30,0x18,0x7a,0x10,0x38,0x5a,0x42,0x4a,0x52};
+int remocon_value = 0;
+int remocon_pre_value = 0;
+
+unsigned short adc_value_x = 0;
+
+
+
+unsigned long micros_10us()
+{
+	return sys_count;
+}
+
+unsigned long micros()
+{
+	return micros_10us()*10;
+}
+
+unsigned long millis()
+{
+	return (micros()/1000);
+}
+
+
+void Delay(unsigned int nTime)
+{ 
+  TimingDelay = nTime;
+
+  while(TimingDelay != 0);
+}
+
+void delay_us(unsigned int nTime)
+{ 
+  TimingDelay = nTime/10;
+
+  while(TimingDelay != 0);
+}
+
+void delay_ms(unsigned int ms)
+{ 
+  delay_us(ms*1000);
+}
+
+
+void TimingDelay_Decrement(void)
+{
+  if (TimingDelay != 0x00)
+  { 
+    TimingDelay--;
+  }
+}
+
+
+void static_led_pwm()
+{
+	if(count_pwm == 100)
+	{
+		count_pwm = 0;
+		GPIOA->BSRR = 0x01 << 5;
+	}
+	else if(count_pwm == pwm_duty)
+	{
+		GPIOA->BRR = 0x01 << 5;
+	}
+	
+	count_pwm++;
+}
+
+void static_servo()
+{
+	if(count_servo == 625)
+	{
+		count_servo = 0;
+		GPIOA->BSRR = 0x01 << 8;
+	}
+	else if(count_servo == servo_duty)
+	{
+		GPIOA->BRR = 0x01 << 8;
+	}
+	
+	count_servo++;
+}
+
+// ISR Routine
+//------------------------------------
+char gpioa_flag = 0;
+void SysTick_Handler(void)
+{
+	TimingDelay_Decrement();
+	sys_count++;
+	
+	if(gpioa_flag == 0)
+	{
+		gpioa_flag = 1;
+		GPIOA->ODR |= (0x01 << 9);
+	}
+	else
+	{
+		gpioa_flag = 0;
+		// GPIOA->ODR &= ~(0x01 << 9);
+		// (0x01 << 9) : (0 0_0 0 0 0_0 0 0 1) << 9 ==> 1 0_0 0 0 0_0 0 0 0
+		// ~(1 0_0 0 0 0_0 0 0 0) ==> 0 1_1 1 1 1_1 1 1 1
+		// (1 0_0 0 0 0_0 0 0 0) & (0 1_1 1 1 1_1 1 1 1) ==> 0 0_0 0 0 0_0 0 0 0
+		GPIOA->ODR &= ~(0x01 << 9);
+	}
+	
+
+
+
+//	if(gpioa_flag == 0)
+//	{
+//		gpioa_flag = 1;
+//		*((volatile unsigned int *)(0x40010800 + 0x0c)) |= (0x01 << (5));  // ODR Register
+//	}
+//	else
+//	{
+//		gpioa_flag = 0;
+//		*((volatile unsigned int *)(0x40010800 + 0x0c)) &= ~(0x01 << (5));   // ODR Register
+//	}
+}
+
+//====================================================
+
+//void EXTI0_IRQHandler(void)
+//{
+//	if (EXTI->PR & (1<<0)) {                       // EXTI0 interrupt pending?
+
+//		remocon_time[rem_count] = micros_10us() * 10;
+//		
+//		if(rem_count > 0){
+//			remocon_diff_time[rem_count-1] = remocon_time[rem_count] - remocon_time[rem_count-1];
+//			
+//			if(remocon_diff_time[rem_count-1] > 13000 && remocon_diff_time[rem_count-1] < 14000)
+//			{
+//				rem_count = 1;
+//			}
+//			if(remocon_diff_time[rem_count-1] > 11000 && remocon_diff_time[rem_count-1] < 12000)
+//			{
+//				rem_count = -1;
+//				remocon_value = remocon_pre_value;
+//			}			
+//		}
+
+//		
+//		rem_count++;
+//		if(rem_count == 34)
+//		{
+//			rem_count = 0;
+//			remocon_flag = 1;
+//		}
+//		
+//		EXTI->PR = (1<<0);                          // clear pending interrupt
+//	}
+//}
+
+
+//====================================================
+
+//char toggle_flag = 0;
+
+//void EXTI0_IRQHandler(void)
+//{
+//	if (EXTI->PR & (1<<0)) {                       // EXTI0 interrupt pending?
+
+//			if(toggle_flag == 0)
+//			{
+//				toggle_flag = 1;
+//				GPIOA_ODR |= 0x02;
+//			}
+//			else
+//			{
+//				toggle_flag = 0;
+//				GPIOA_ODR &= ~0x02;
+//			}
+//		
+//		EXTI->PR = (1<<0);                          // clear pending interrupt
+//	}
+//}
+//====================================================
+
+volatile unsigned int count_exti = 0;
+unsigned int first_time = 0;
+unsigned int last_time = 0;
+unsigned int difference_time = 0;
+
+//void EXTI0_IRQHandler(void)
+//{
+//	if (EXTI->PR & (1<<0)) {                       // EXTI0 interrupt pending?
+
+//		if(GPIOA_IDR & 0x01)
+//		{
+//			first_time = count_exti;
+//		}
+//		else
+//		{
+//			last_time = count_exti;
+//			
+//			difference_time = last_time - first_time;
+//		}
+//		
+//		EXTI->PR = (1<<0);                          // clear pending interrupt
+//	}
+//}
+
+
+char flag_exit_0 = 0;
+
+void EXTI0_IRQHandler(void)
+{
+	if (EXTI->PR & (1<<0)) {                       // EXTI0 interrupt pending?
+		if(flag_exit_0 == 0)
+		{
+			flag_exit_0 = 1;
+			
+			GPIOA->ODR |= (0x01 << 1);
+		}
+		else
+		{
+			flag_exit_0 = 0;
+			
+			GPIOA->ODR  &= ~(0x01 << 1);
+		}
+		
+		EXTI->PR = (1<<0);                          // clear pending interrupt
+	}
+}
+
+//====================================================
+
+
+
+int toggle1 = 0;
+int toggle2 = 0;
+
+void EXTI1_IRQHandler(void)
+{
+	if (EXTI->PR & (1<<1)) {                       // EXTI0 interrupt pending?
+		if(toggle1)
+			GPIOA->ODR |= 0x01 << 11;
+		else 
+			GPIOA->ODR &= ~(0x01 << 11);
+		
+		toggle1 = !toggle1;
+		
+		//EXTI->PR = (1<<1);                          // clear pending interrupt
+	}
+}
+
+
+//void EXTI2_IRQHandler(void)
+//{
+//	if (EXTI->PR & (1<<2)) {                       // EXTI0 interrupt pending?
+//		if(toggle2)
+//			GPIOA->ODR |= 0x01 << 12;
+//		else 
+//			GPIOA->ODR &= ~(0x01 << 12);
+//		
+//		toggle2 = !toggle2;
+//		
+//		EXTI->PR = (1<<2);                          // clear pending interrupt
+//	}
+//}
+
+
+void EXTI2_IRQHandler(void)
+{
+	if (EXTI->PR & (1<<2)) {                       // EXTI0 interrupt pending?
+
+			//printf("haha\n\r");
+		
+		EXTI->PR = (1<<2);                          // clear pending interrupt
+	}
+}
+
+
+
+unsigned long falling_edge_timing[40];
+unsigned int diff_falling_edge_timing[33];
+int falling_edge_index = 0;
+int diff_time1 = 0;
+int value_bit[32];
+unsigned char value_num[10] = {0x16,0x0c,0x18,0x5e,0x08,0x1c,0x5a,0x42,0x52,0x4a};
+unsigned char remocon_num = 0;
+
+unsigned char value_hex = 0;
+char exti_callback_flag = 0;
+
+int servo_duty_1 = 70;
+char servo_millis_enable = 0;
+
+
+void EXTI3_IRQHandler(void)
+{
+	int i;
+	
+	if (EXTI->PR & (1<<3)) {                       // EXTI0 interrupt pending?
+		//printf("haha:%d\r\n", rem_count1++);
+		
+		falling_edge_timing[falling_edge_index] = micros_10us() * 10;
+		
+		if(falling_edge_index > 0)
+		{
+		
+			diff_falling_edge_timing[falling_edge_index - 1] = 
+					falling_edge_timing[falling_edge_index] - falling_edge_timing[falling_edge_index-1];
+			
+			diff_time1 = diff_falling_edge_timing[falling_edge_index - 1];
+			
+			if(diff_time > 13000 && diff_time < 14000)
+			{
+				//printf("Lead Code\r\n");
+				
+				falling_edge_index = 1;
+			}
+			else if(diff_time1 > 11000 && diff_time1 < 12000)
+			{
+				printf("%d..\r\n", remocon_num);
+				
+				falling_edge_index = -1;
+			}
+		}
+		
+		falling_edge_index++;
+		if(falling_edge_index == 34)
+		{
+				exti_callback_flag = 0;
+				exti_callback_flag = 1;			
+		}
+		
+		EXTI->PR = (1<<3);                          // clear pending interrupt
+	}
+}
+
+void exti_callback_func()
+{
+			falling_edge_index = 0;	
+					
+			for(i=0;i<32;i++)
+			{
+				if(diff_falling_edge_timing[i+1] > 1000 && diff_falling_edge_timing[i+1] < 1500)
+				{
+					value_bit[i] = 0;
+				}
+				else if(diff_falling_edge_timing[i+1] > 2000 && diff_falling_edge_timing[i+1] < 2500)
+				{
+					value_bit[i] = 1;
+				}				
+					
+			}		
+			
+//			for(i = 0; i< 34; i++)
+//			{
+//				printf("%d..\r\n", diff_falling_edge_timing[i]);
+//			}
+			
+//			for(i = 0; i< 32; i++)
+//			{
+//				printf("%d..\r\n", value_bit[i]);
+//			}			
+			
+			value_hex = 0;
+			
+			for(i=0;i<8;i++)
+			{
+				value_hex >>= 1;
+				
+				if(value_bit[i+16] == 1)
+				{
+					value_hex |= 0x80;
+				}
+			}
+			
+			//printf("value_hex = %02x..\r\n",value_hex);
+			
+			for(i=0;i<10;i++)
+			{
+				if(value_num[i] == value_hex)
+				{
+					remocon_num = i;
+					printf("%d\r\n",remocon_num);
+				}
+					
+			}
+			
+			//---------------------------
+			// servo control
+			if(remocon_num == 1) 
+			{
+				servo_duty_1 = 70;			
+				servo_millis_enable = 0;
+			}
+			else if(remocon_num == 2) 
+			{
+				servo_duty_1 = 230;			
+				servo_millis_enable = 0;
+			}
+			else if(remocon_num == 3) 
+			{
+				servo_duty_1 = 150;			
+				servo_millis_enable = 0;
+			}
+			else if(remocon_num == 4) 
+			servo_millis_enable = 1;
+			
+			//---------------------------
+	
+}
+
+
+
+void EXTI9_5_IRQHandler(void)
+{
+	if (EXTI->PR & (1<<7)) {                       // EXTI0 interrupt pending?
+
+
+		printf("haha\r\n");
+		
+		
+		EXTI->PR = (1<<7);                          // clear pending interrupt
+	}
+}
+
+
+//		
+void EXTI15_10_IRQHandler(void)
+{
+	if (EXTI->PR & (1<<13)) {                       // EXTI0 interrupt pending?
+
+		if( GPIOC->IDR & (0x01 << 13) )
+		{
+			GPIOA->ODR |= (0x01 << 5);
+			
+			//rising_time = micros_10us();
+		}
+		else
+		{
+			GPIOA->ODR &= ~(0x01 << 5);
+			
+			
+//			falling_time = micros_10us();
+//			diff_time = (falling_time - rising_time) * 10;
+		}
+		
+		
+		EXTI->PR = (1<<13);                          // clear pending interrupt
+	}
+}
+
+
+
+		
+// void EXTI15_10_IRQHandler(void)
+// {
+// 	if (EXTI->PR & (1<<13)) {                       // EXTI0 interrupt pending?
+
+// 		if( GPIOC->IDR & (0x01 << 13) )
+// 		{
+// 			printf("Button 6 : up \n\r");
+// 		}
+// 		else
+// 		{
+// 			printf("Button 6 : down \n\r");
+// 		}
+		
+		
+// 		EXTI->PR = (1<<13);                          // clear pending interrupt
+// 	}
+// }
+
+
+//void TIM2_IRQHandler (void) {
+
+//	 if ((TIM2->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//			//static_led_pwm();
+//			GPIOA->BSRR = 0x01 << 5;
+//	    
+//			TIM2->SR &= ~(1<<0); // clear UIF flag
+//	 }
+//	 else if ((TIM2->SR & 0x0002) != 0) { // check capture compare interrupt source
+//			
+//			//static_led_pwm();
+//			GPIOA->BRR = 0x01 << 5;
+//	    
+//			TIM2->SR &= ~(1<<1); // clear UIF flag
+//	 }		
+//}
+
+//================================================
+
+
+//char toggle_flag = 0;
+
+//void TIM2_IRQHandler (void) {
+
+//	 if ((TIM2->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//			if(toggle_flag == 0)
+//			{
+//				toggle_flag = 1;
+//				GPIOA_ODR |= 0x02;
+//			}
+//			else
+//			{
+//				toggle_flag = 0;
+//				GPIOA_ODR &= ~0x02;
+//			}
+
+//	    
+//			TIM2->SR &= ~(1<<0); // clear UIF flag
+//	 }
+
+//}
+
+//================================================
+
+//int count_isr = 0;
+//int duty = 1;
+
+//void TIM2_IRQHandler (void) {
+
+//	 if ((TIM2->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//		 if(count_isr == 100)
+//		 {
+//			 count_isr = 0;
+//			 GPIOA_ODR |= 0x02;
+//		 }
+//		 else if(count_isr == duty)
+//		 {
+//			 GPIOA_ODR &= ~0x02;
+//		 }
+
+//			count_isr++;
+//	    
+//			TIM2->SR &= ~(1<<0); // clear UIF flag
+//	 }
+
+//}
+
+
+//================================================
+// int count_isr = 0;
+// int duty = 1;
+
+// void TIM2_IRQHandler (void) {
+
+// 	 if ((TIM2->SR & 0x0001) != 0) { // check update interrupt source
+			
+// 		 TIM2->CCR1 = backlignt_pwm_duty;
+// 			backlight_on();
+		 
+// 		 TIM2->CCR2 = led_pwm_duty;
+// 			led_on();
+	    
+// 			TIM2->SR &= ~(1<<0); // clear UIF flag
+// 	 }
+	 
+// 	 	else if ((TIM2->SR & 0x0002) != 0) { // check update interrupt source
+			
+// 			backlight_off();
+	    
+// 			TIM2->SR &= ~(1<<1); // clear CC1E flag
+// 	 }
+// 	 	else if ((TIM2->SR & 0x0004) != 0) { // check update interrupt source
+			
+// 			led_off();
+	    
+// 			TIM2->SR &= ~(1<<2); // clear CC1E flag
+// 	 }		
+
+// }
+
+
+//int count_isr = 0;
+//int duty = 1;
+
+//void TIM2_IRQHandler (void) {
+
+//	 if ((TIM2->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//			GPIOA->ODR |= (0x01 << 4);
+//		 
+//		 TIM2->CCR1 = servo_duty_1;
+//	    
+//			TIM2->SR &= ~(1<<0); // clear UIF flag
+//	 }
+//	 
+//	 	else if ((TIM2->SR & 0x0002) != 0) { // check update interrupt source
+//			
+//			GPIOA->ODR &= ~(0x01 << 4);
+//	    
+//			TIM2->SR &= ~(1<<1); // clear CC1E flag
+//	 }
+
+//}
+
+
+
+//void TIM3_IRQHandler (void) {
+
+//	 if ((TIM3->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//			//static_servo();
+//			GPIOA->BSRR = 0x01 << 8;
+//	    
+//			TIM3->SR &= ~(1<<0); // clear UIF flag
+//	 }	
+//	 else if ((TIM3->SR & 0x0002) != 0) { // check capture compare interrupt source
+//			
+//			GPIOA->BRR = 0x01 << 8;
+//	    
+//			TIM3->SR &= ~(1<<1); // clear UIF flag
+//	 }		 
+//} 
+//------------------------------------
+
+
+
+//void TIM3_IRQHandler (void) {
+
+//	 if ((TIM3->SR & 0x0001) != 0) { // check update interrupt source
+//			
+//			duty++;
+//		  if(duty == 99) duty = 1;
+//	    
+//			TIM3->SR &= ~(1<<0); // clear UIF flag
+//	 }		 
+//} 
+
+
+
+//================================================
+int bl_touch_duty = 70;
+
+// void TIM3_IRQHandler (void) {
+
+// 	 if ((TIM3->SR & 0x0001) != 0) { // check update interrupt source
+			
+// 		 TIM3->CCR1 = bl_touch_duty;
+		 
+// 			bl_touch_high();
+		 
+	    
+// 			TIM3->SR &= ~(1<<0); // clear UIF flag
+// 	 }
+	 
+// 	 	else if ((TIM3->SR & 0x0002) != 0) { // check update interrupt source
+			
+// 			bl_touch_low();
+	    
+// 			TIM3->SR &= ~(1<<1); // clear CC1E flag
+// 	 }
+
+
+// }
+//================================================
+
+/*----------------------------------------------------------*\
+ | MIAN ENTRY                                               |
+\*----------------------------------------------------------*/
+
+
+//#define rs_high()	GPIOD->ODR |= (0x01 << 11);
+//#define rs_low()	GPIOD->ODR &= ~(0x01 << 11);
+//#define rw_low()	GPIOD->ODR &= ~(0x01 << 5);
+
+
+void rw_low()
+{
+	GPIOD->ODR &= ~(0x01 << 5);
+}
+
+void rs_high()
+{
+	GPIOD->ODR |= (0x01 << 11);
+}
+
+
+void rs_low()
+{
+	GPIOD->ODR &= ~(0x01 << 11);
+}
+
+
+void enbale_high_low()
+{
+	GPIOD->ODR |= (0x01 << 4);
+	GPIOD->ODR &= ~(0x01 << 4);
+}
+
+void set_value_8bit(unsigned char value)
+{
+		GPIOE->ODR &= ~(0xff << 8);
+		GPIOE->ODR |= (value << 8);
+}
+
+
+void set_instruction_8bit(unsigned char inst)
+{
+	rs_low();
+	set_value_8bit(inst);
+	enbale_high_low();
+	rs_high();
+	Delay(5);	 // 50 us delay
+}
+
+void set_data_8bit(unsigned char data)
+{
+	set_value_8bit(data);
+	enbale_high_low();
+	Delay(5);	 // 50 us delay
+}
+
+void set_cursor(char row, char col)
+{
+	if(row == 1)
+	{
+		set_instruction_8bit(0x80 + col);
+	}
+	else if(row == 2)
+	{
+		set_instruction_8bit(0xC0 + col);
+	}	
+		
+}
+
+void charLCD_init()
+{
+	//backlight_on();
+	
+	rs_high();
+	rw_low();
+	
+	set_instruction_8bit(0x30);
+	set_instruction_8bit(0x30);
+	set_instruction_8bit(0x30);
+	set_instruction_8bit(0x38);
+	set_instruction_8bit(0x06);
+	set_instruction_8bit(0x0c);	
+	set_instruction_8bit(0x80);
+	set_instruction_8bit(0x01);
+	Delay(200);  // 2ms delay
+}
+
+void charLCD_sting(char *string)
+{
+	int i;
+	
+	for(i=0;i<strlen(string);i++)
+	{
+		set_data_8bit(string[i]);
+	}
+	
+}
+
+
+
+unsigned long curr_micros = 0;
+unsigned long pre_micros = 0;
+
+int test_toggle = 0;
+char key_flag[5];
+
+char *up_string[5] = {"Left UP","Right UP","Up UP","Down UP","Enter UP"};
+char *down_string[5] = {"Left DOWN","Right DOWN","Up DOWN","Down DOWN","Enter DOWN"};
+
+char *lcd_menu[6] = {"  1. LED On     ", 
+															 "  2. LED Off    ", 
+															 "  3. LED PWM    ", 
+															 "  4. Servo Left ", 
+															 "  5. Servo Right", 
+															 "  6. Servo Var  "};
+
+
+enum 
+{
+	LEFT_BUTTON = 0,
+	RIGHT_BUTTON,
+	UP_BUTTON,
+	DOWN_BUTTON,
+	ENTER_BUTTON,
+}	;
+					
+char enter_position = 0;
+
+enum
+{
+	ENTER_POSITION_UPPER = 0,
+	ENTER_POSITION_LOWER
+};
+
+char menu_index = 0;
+
+
+
+void enter_character(char upper_lower)
+{
+	if(upper_lower == ENTER_POSITION_UPPER)
+	{
+		set_cursor(2,0);
+		printf_lcd(" ");
+		
+		set_cursor(1,0);
+		printf_lcd(">");
+	}
+	else if(upper_lower == ENTER_POSITION_LOWER)
+	{
+		set_cursor(1,0);
+		printf_lcd(" ");
+		
+		set_cursor(2,0);
+		printf_lcd(">");
+	}	
+
+	
+}
+
+unsigned short in_bltouch_switch = 0;
+
+
+char enter_index = 0;
+
+
+typedef struct 
+{
+	int a;
+	int b;
+	int c;
+} aa;
+
+
+typedef struct
+{
+  volatile unsigned int CRL;
+  volatile unsigned int CRH;
+  volatile unsigned int IDR;
+  volatile unsigned int ODR;
+  volatile unsigned int BSRR;
+  volatile unsigned int BRR;
+  volatile unsigned int LCKR;
+} GPIO_Type;
+
+#define GPIOAA *(volatile unsigned int *)0x40010800
+
+#define GPIOAAA ((GPIO_Type *)0x40010800)
+	
+
+
+void delay_1ms()
+{
+	for(i=0;i<15000;i++);
+}
+
+
+//================================================
+
+volatile unsigned int millis_value = 0;
+
+unsigned long micros_()
+{
+	return ( ((unsigned long)millis_value)*1000 + TIM2->CNT);
+}
+
+unsigned int millis_()
+{
+	return millis_value;
+}
+
+void TIM2_IRQHandler(void) 
+{
+	 if ((TIM2->SR & 0x0001) != 0) 
+	 {
+		millis_value++;
+
+		TIM2->SR &= ~(1<<0);
+	 }
+}
+
+int pwm_count_for_timer = 20;
+void TIM3_IRQHandler (void) {
+
+	if((TIM3->SR & 0x0001) != 0) {  // Update Interrupt : 2 ms 마다
+		GPIOA->ODR |= (0x01 << 5);
+
+		TIM3->SR &= ~(1<<0);
+	}	
+
+	if((TIM3->SR & 0x0002) != 0) {  // Capture Compare : 0~100단계(1단계:20) - 0 ~ 2000
+		GPIOA->ODR &= ~(0x01 << 5);
+
+		TIM3->SR &= ~(1<<1);
+	}		 
+} 
+
+int servo_count_for_timer = 700;
+void TIM4_IRQHandler (void) {
+
+	if((TIM4->SR & 0x0001) != 0) {  // Update Interrupt : 20 ms 마다
+		GPIOA->ODR |= (0x01 << 9);
+
+		TIM4->SR &= ~(1<<0);
+	}	
+
+	if((TIM4->SR & 0x0002) != 0) {  // Capture Compare : 
+		GPIOA->ODR &= ~(0x01 << 9);
+
+		TIM4->SR &= ~(1<<1);
+	}		 
+}
+
+////unsigned int first_time = 0;
+//unsigned int diff_time_button = 0;
+//void EXTI15_10_IRQHandler(void)
+//{
+//	if (EXTI->PR & (1<<13)) {                      
+//		if( GPIOC->IDR & (0x01 << 13) )
+//		{
+//			// printf("Button up \n\r");
+//			unsigned int second_time = micros_();
+//			diff_time_button = second_time - first_time;
+//			//printf("diff_time_button = %d\n\r", diff_time_button);
+//			printf("ultra sonic = %d cm\n\r", (int)(diff_time_button * 0.017));
+//		}
+//		else
+//		{
+//			// printf("Button down \n\r");
+//			first_time = micros_();
+//		}
+//		
+//		EXTI->PR = (1<<13);                    
+//	}
+//}
+//================================================
+
+
+int test_var = 0;
+int *p_test_var = 0;
+
+//---------------------------------
+// unsigned long curr_micros = 0;
+unsigned long prev_micros = 0;
+// unsigned long curr_millis = 0;
+unsigned long prev_millis = 0;
+int toggle_flag = 0;
+int duty_count = 0;
+int duty = 1;
+//---------------------------------
+unsigned long prev_micros_servo = 0;
+unsigned long prev_millis_servo = 0;
+int duty_count_servo = 0;
+int duty_servo = 44;
+//---------------------------------
+unsigned long prev_millis_printf = 0;
+int printf_count = 0;
+//---------------------------------
+
+char abc = 3;
+char *abc_p;
+
+int def;
+int *def_p;
+
+
+int main (void) {
+//  	int a =5;
+	int i, j;
+	
+	char aaa= 5;
+	
+	char buff[20];
+
+	unsigned int count = 0;
+	unsigned int count_10ms = 0;	
+	unsigned int var_pwm = 1;
+	//---------------------------------
+
+	unsigned long curr_millis = 0;
+	unsigned long prev_millis = 0;
+	//---------------------------------
+		
+	aa a;
+	aa *b;
+	
+	
+	stm32_Init ();                                  // STM32 setup
+	
+	
+//	abc = 5;
+//	abc_p = &abc;
+	
+	
+	
+	def = 0x12345678;
+	def_p = &def;
+	
+
+	while(1)
+	{
+
+	}
+	
+	while(1);
+	
+	
+	
+	while(1)
+	{
+		// 0 0 0 0 0 0 0 1 ==> left shift : 0 0 0 0 0 0 1 0 
+		GPIOA->ODR |= (0x01 << 1);   // a = a | b; ==> a |= b;
+		delay_ms(10);
+		// 0 0 0 0 0 0 0 1  ==>
+		// left shift : 0 0 0 0 0 0 1 0 ==>
+		// not : 				1 1 1 1 1 1 0 1 ==>
+		// and :       0 0 0 0 0 0 0 0
+		GPIOA->ODR &= ~(0x01 << 1);  
+		delay_ms(10);		
+	}
+	
+	
+	
+	// CRL Register - GPIOA.5 : Output 50MHz, Push Pull
+		*((volatile unsigned int *)(0x40010800 + 0x00)) &= ~(0x0f << (5 * 4));
+		*((volatile unsigned int *)(0x40010800 + 0x00)) |= (0x03 << (5 * 4));  
+	
+		while(1)
+		{
+			curr_millis = millis();
+			if(curr_millis - prev_millis >= 100)
+			{
+				prev_millis = curr_millis;
+
+				if(gpioa_flag == 0)
+				{
+					gpioa_flag = 1;
+					*((volatile unsigned int *)(0x40010800 + 0x0c)) |= (0x01 << (5));  // ODR Register
+				}
+				else
+				{
+					gpioa_flag = 0;
+					*((volatile unsigned int *)(0x40010800 + 0x0c)) &= ~(0x01 << (5));   // ODR Register
+				}
+			}
+		}
+//		 char abc ;
+//		abc = 1;
+//		abc = 2;
+//		abc = 3;
+		
+		
+	// GPIOA_CRL Register
+	*((volatile unsigned int *)0x40010800) &= ~0x0f;
+	*((volatile unsigned int *)0x40010800) |=  0x03; 
+		
+	
+	while(1)
+	{
+		*((volatile unsigned int *)0x4001080C) = 0x01;
+		*((volatile unsigned int *)0x4001080C) = 0x00;
+	}
+
+	
+	while(1);
+	
+	//---------------------------------
+	// while(1)
+	// {
+	// 	GPIOA->ODR |= (0x01 << 5);
+	// 	delay_ms(500);
+	// 	GPIOA->ODR &= ~(0x01 << 5);
+	// 	delay_ms(500);		
+	// }
+	//--------------------------------
+	// while(1)
+	// {
+	// 	curr_millis = millis();
+	// 	if(curr_millis - prev_millis >= 500)
+	// 	{
+	// 		prev_millis = curr_millis;
+
+	// 		if(toggle_flag == 0)
+	// 		{
+	// 			toggle_flag = 1;
+	// 			GPIOA->ODR |= (0x01 << 5);
+	// 		}
+	// 		else
+	// 		{
+	// 			toggle_flag = 0;
+	// 			GPIOA->ODR &= ~(0x01 << 5);
+	// 		}
+	// 	}
+	// }
+	//---------------------------------
+	while(1)
+	{
+		curr_micros = micros_();
+		curr_millis = millis_();
+		//---------------------------------
+		//---------------------------------
+		// LED PWM
+		// if(curr_micros - prev_micros >= 100)
+		// {
+		// 	prev_micros = curr_micros;
+
+		// 	if(duty_count == 100)
+		// 	{
+		// 		duty_count = 0;
+		// 		GPIOA->ODR |= (0x01 << 5);
+		// 	}
+		// 	else if(duty_count == duty)
+		// 	{
+		// 		GPIOA->ODR &= ~(0x01 << 5);
+		// 	}
+		// 	duty_count++;
+		// }
+		// //---------------------------------
+
+		// if(curr_millis - prev_millis >= 10)
+		// {
+		// 	prev_millis = curr_millis;
+
+		// 	duty++;
+		// 	if(duty == 99) duty = 1;
+		// }
+		//---------------------------------
+		//---------------------------------
+		// Servo Motor PWM
+		// if(curr_micros - prev_micros_servo >= 16)
+		// {
+		// 	prev_micros_servo = curr_micros;
+
+		// 	if(duty_count_servo == 1250)  // 1250 : 16 * 1250 = 20000 us(20 ms)
+		// 	{
+		// 		duty_count_servo = 0;
+		// 		GPIOA->ODR |= (0x01 << 9);
+		// 	}
+		// 	else if(duty_count_servo == duty_servo)
+		// 	{
+		// 		GPIOA->ODR &= ~(0x01 << 9);
+		// 	}
+		// 	duty_count_servo++;
+		// }
+		// //---------------------------------
+		// if(curr_millis - prev_millis_servo >= 20)
+		// {
+		// 	prev_millis_servo = curr_millis;
+
+		// 	duty_servo++;
+		// 	if(duty_servo == 144) duty_servo = 44;
+		// }
+		//---------------------------------
+		//---------------------------------
+		// LED PWM : Timer 3
+		if(curr_millis - prev_millis >= 10)
+		{
+			prev_millis = curr_millis;
+
+			pwm_count_for_timer+=20;
+			if(pwm_count_for_timer >= 1980) pwm_count_for_timer = 20;
+
+			TIM3->CCR1 = pwm_count_for_timer;
+		}
+		//---------------------------------
+		//---------------------------------
+		// Servo Motor : Timer 4
+		if(curr_millis - prev_millis_servo >= 20)
+		{
+			prev_millis_servo = curr_millis;
+
+			servo_count_for_timer+=16;
+			if(servo_count_for_timer >= 2300) servo_count_for_timer = 700;
+
+			TIM4->CCR1 = servo_count_for_timer;
+		}
+		//---------------------------------
+		//---------------------------------
+		if(curr_millis - prev_millis_printf >= 1000)
+		{
+			prev_millis_printf = curr_millis;
+
+			printf("haha : %d \n", printf_count++);
+
+			GPIOA->ODR |= (0x01 << 5);
+			delay_us(10);
+			GPIOA->ODR &= ~(0x01 << 5);
+		}
+		//---------------------------------
+		//---------------------------------
+
+	}
+	//---------------------------------
+
+
+
+
+	
+	while(1);
+	
+	
+	*(volatile unsigned int *)(0x40021000 + 0x18) |= 0x01<<2; // APB2ENR : PORTA enable
+	
+	*(volatile unsigned int *)(0x40021000 + 0x18) &= ~(0x01<<3);  // APB2ENR : PORTB disable
+	
+	// GPIOA.5 Output Mode
+	*(volatile unsigned int *)(0x40010800 + 0x00) &= ~(0x0f << 4*5);    // GPIOA_CRL 
+	*(volatile unsigned int *)(0x40010800 + 0x00) |= 0x03 << (4*5);    // GPIOA_CRL 
+	// GPIOA.5 ODR Register : HIGH
+//	while(1)
+//	{
+//		*(volatile unsigned int *)(0x40010800 + 0x0C) &= ~(0x01 << 5);  // Clear
+//		for(j=0;j<800;j++) for(i=0;i<20000;i++);
+//		*(volatile unsigned int *)(0x40010800 + 0x0C) |= (0x01 << 5);  // Set
+//		for(j=0;j<800;j++) for(i=0;i<20000;i++);
+//	}
+	
+	while(1);
+	
+	
+	RCC->APB2ENR |= 0x04; // APB2ENR->GPIOA enable 
+	
+	//GPIOA->CRL = 0x44444443;
+	
+	// GPIOA 0 �� pin
+	GPIOA->CRL &=  ~(0x0f << 0);
+	GPIOA->CRL |=  (0x03 << 0);
+	
+	// GPIOA 3 �� pin
+	GPIOA->CRL &=  ~(0x0f << 3*4);
+	GPIOA->CRL |=  (0x03 << 3*4);
+	
+	while(1)
+	{
+		GPIOA->ODR |= (0x01 << 0);  // GPIOA.0 set
+		GPIOA->ODR |= (0x01 << 3);  // GPIOA.3 set
+		
+		//for(j=0;j<1000;j++)
+			for(i=0;i<15000;i++);  // 1ms delay
+		
+		GPIOA->ODR &= ~(0x01 << 0);  // GPIOA.0 clear
+		GPIOA->ODR &= ~(0x01 << 3);  // GPIOA.3 clear
+		
+		//for(j=0;j<1000;j++)
+			for(i=0;i<15000;i++);  // 1ms delay		
+	}
+	
+	
+	while(1);
+	
+	
+	RCC->APB2ENR |= 0x04;  // GPIOA enable
+	
+	GPIOA->CRL &= ~(0x0f << 5*4);
+	GPIOA->CRL |= (0x03 << 5*4);  // GPIOA.5 : 50MHz Push Pull
+	
+	
+//while(1)
+//{
+//	GPIOA->ODR = 0x01 << 5;
+//	for(j=0;j<1000;j++)
+//		for(i=0;i<15000;i++);  // 1ms delay
+//	GPIOA->ODR = 0x00;	
+//	for(j=0;j<1000;j++)	
+//		for(i=0;i<15000;i++);  // 1ms delay
+//}
+	
+	while(1)
+{
+	//GPIOA->ODR = 0x01 << 5;
+	*(volatile unsigned int *)(0x40010800+0x0c) = 0x01 << 5;
+	for(j=0;j<1000;j++)
+		for(i=0;i<1000;i++);  // 1ms delay
+	//GPIOA->ODR = 0x00;	
+	*(volatile unsigned int *)(0x40010800+0x0c) &= ~(0x01 << 5);
+	for(j=0;j<1000;j++)	
+		for(i=0;i<1000;i++);  // 1ms delay
+}
+
+	
+	
+		RCC->APB2ENR |= 0x04;  // GPIOA
+	
+//		*((volatile unsigned int *)0x40010800) = 0x03;
+//		
+//		while(1)
+//		{
+//			*((volatile unsigned int *)0x4001080C) = 0x01;
+//			for(i=0;i<10000;i++);
+//			*((volatile unsigned int *)0x4001080C) = 0x00;
+//			for(i=0;i<10000;i++);
+//		}
+
+			GPIOA->CRL = 0x03;
+			while(1)
+			{
+				GPIOA->ODR = 0x01;
+				for(i=0;i<10000;i++);
+					GPIOA->ODR = 0x00;
+				for(i=0;i<10000;i++);			
+			}
+
+
+
+		while(1);
+	
+	
+		// Buzzer off
+	RCC->APB2ENR |= (0x01 << 3);
+	GPIOB->BSRR = (0x01 << 5);
+	
+		//-------------------------------------
+	//Uart
+	RCC->APB2ENR |= (0x01 << 2); // 2 : GPIOA
+	RCC->APB2ENR |= (0x01 << 14); // 14 : USART1
+	
+	GPIOA->CRH &= ~(0x0f << 4*1); // 1 : PA.9
+	GPIOA->CRH &= ~(0x0f << 4*2);	 // 2 : PA.10
+	GPIOA->CRH |= (0x0f << 4*1); // 1 : PA.9
+	
+	GPIOA->CRH |= (0x0D << 4*2);	 // 2 : PA.10	
+	
+	USART1->CR1 = (0x01 << 2) | (0x01 << 3) | (0x01 << 13); // 2 : RE, 3: TE , 13 : UE
+	USART1->BRR = 0x271;
+
+	
+	printf("address of a = %p \n\r", &a);
+		printf("address of b = %p \n\r", b);
+		
+	while(1);
+	
+	
+		// systick
+	SysTick->LOAD = 720;
+	SysTick->CTRL = 0x07;
+	
+	//-------------------------------------
+	// Timer3
+	RCC->APB2ENR |= (0x01 << 4);
+	RCC->APB1ENR |= (0x01 << 1);
+
+	GPIOC->CRL &= ~(0x0f << 6*4);
+	GPIOC->CRL |= (0x03 << 6*4);	
+	
+	TIM3->CR1 = 0x01;
+	TIM3->DIER = 0x03;
+	TIM3->PSC = 720-1;
+	TIM3->ARR = 2000 -1;
+	TIM3->CCMR1 = 0x68;
+	TIM3->CCER = 0x01;
+	TIM3->CCR1 = 70;
+	
+	NVIC->ISER[0] = (0x01 << 29);
+
+	
+	//BLTouch switch
+	GPIOC->CRL &= ~(0x0f << 7);
+	GPIOC->CRL |= (0x04 << 7);	
+	
+	
+	
+	// EXTI 7(PC.7)
+//	RCC->APB2ENR |= (0x01 << 0); // 0 : AFIO
+//	AFIO->EXTICR[1] = 0x2000;
+//	
+//	EXTI->IMR |= (0x01 << 7);
+//	EXTI->FTSR |= (0x01 << 7);	
+//	
+//	NVIC->ISER[0] = (0x01 << 23);
+	
+	
+	while(1)
+	{
+		
+		curr_millis = micros_10us();
+				// BL Touch Millis
+		if(curr_millis - prev_millis_bl_touch > 100000)
+		{
+			prev_millis_bl_touch = curr_millis;
+			
+			if(bl_touch_toggle == 0)
+			{
+				bl_touch_toggle = 1;
+				bl_touch_duty = 65;
+			}
+			else
+			{
+				bl_touch_toggle = 0;
+				bl_touch_duty = 147;
+			}			
+		}	
+		
+		if(curr_millis - prev_millis_bl_touch_switch > 1000)  // 1000 : 1ms
+		{
+			prev_millis_bl_touch = curr_millis;
+			
+			in_bltouch_switch = GPIOC->IDR;
+			if(in_bltouch_switch & (0x01 << 7))
+			{
+				printf("in_bltouch_switch up\r\n");
+			}
+			else {
+				printf("in_bltouch_switch down\r\n");
+			}			
+
+			
+		}			
+		
+		
+	}
+	
+	
+	while(1);
+	
+	
+	
+	
+	
+	// RCC
+	RCC->APB2ENR |= (0x01 << 5) | (0x01 << 6);  // 5 : GPIOD, 6 : GPIOE
+	
+	// GPIOD
+	GPIOD->CRL &= ~(0x0F << 4*4);  // GPIOD4
+	GPIOD->CRL &= ~(0x0F << 5*4);  // GPIOD5
+	GPIOD->CRH &= ~(0x0F << 3*4);  // GPIOD11
+	
+	GPIOD->CRL |= (0x03 << 4*4);  // GPIOD4  , EN
+	GPIOD->CRL |= (0x03 << 5*4);  // GPIOD5  , RW
+	GPIOD->CRH |= (0x03 << 3*4);  // GPIOD11 , RS
+	
+	//GPIOE
+	GPIOE->CRL &= ~(0x0F << 5*4);
+	GPIOE->CRH &= ~(0xFFFFFFFF);
+	
+	GPIOE->CRL |= (0x03 << 5*4);
+	GPIOE->CRH |= (0x33333333);
+	
+//-------------------------------------------------
+	// Key
+	
+	RCC->APB2ENR |= (0x01 << 4);  // 4 : GPIOC
+	
+	GPIOC->CRL &= ~(0x0fffff );
+	GPIOC->CRL |= (0x044444);	
+
+
+//-------------------------------------------------
+	// BL Touch
+	GPIOC->CRL &= ~(0x0f << 6*4 );
+	GPIOC->CRL |= (0x03 << 6*4 );	
+	
+		
+//-------------------------------------------------
+// Timer 2
+RCC->APB1ENR |= (0x01 << 0);  // 0 : timer2
+TIM2->CR1 = 0x01;
+TIM2->DIER = 0x07;
+TIM2->CNT = 0;
+TIM2->PSC = 72-1;
+TIM2->ARR = 2000 -1;
+TIM2->CCMR1 = 0x6868;
+TIM2->CCER = 0x11;
+TIM2->CCR1 = 200;
+TIM2->CCR2 = 200;
+
+
+//-------------------------------------------------
+// Timer 3
+RCC->APB1ENR |= (0x01 << 1);  // 0 : timer2
+TIM3->CR1 = 0x01;
+TIM3->DIER = 0x03;
+TIM3->CNT = 0;
+TIM3->PSC = 720-1;
+TIM3->ARR = 2000 -1;
+TIM3->CCMR1 = 0x68;
+TIM3->CCER = 0x01;
+TIM3->CCR1 = 70;
+
+
+//----------------------------------------------
+// NVIC
+NVIC->ISER[0] |= (0x01 << 28); 
+NVIC->ISER[0] |= (0x01 << 29); 
+
+
+//----------------------------------------------
+// PE.4
+//RCC->APB2ENR |= 
+GPIOE->CRL &= ~(0x0f << 4*4);
+GPIOE->CRL |= (0x03 << 4*4);
+
+		
+	//-------------------------------------------------
+	// Char LCD 
+	
+		charLCD_init();
+	
+		//charLCD_sting("hello world !!");
+
+		// menu
+		set_cursor(1,0);
+		printf_lcd(lcd_menu[0]);
+		set_cursor(2,0);
+		printf_lcd(lcd_menu[1]);
+		
+		// Enter character
+		set_cursor(1,0);
+		printf_lcd(">");
+
+	while(1)
+	{
+	
+		
+		curr_millis = micros_10us();
+		
+		if(curr_millis - prev_millis_button > 1000)  // 1000 : 10 ms
+		{
+				prev_millis_button = curr_millis;
+			
+				for(i = 0;i < 5; i++)
+					{		
+							if(GPIOC->IDR & (0x01 << i))  // button Up
+							{
+								if(key_flag[i] == 0)
+								{
+									key_flag[i] = 1;
+									set_cursor(1,0);
+									//printf_lcd(up_string[i]);
+								}
+								
+							}
+							else  // button Down
+							{
+								if(key_flag[i] == 1)
+								{
+									key_flag[i] = 0;
+									set_cursor(1,0);
+									//printf_lcd(down_string[i]);
+									
+									if(i == DOWN_BUTTON)
+									{
+										if(enter_position == ENTER_POSITION_UPPER)
+										{
+											enter_position = ENTER_POSITION_LOWER;
+											enter_character(enter_position);		
+										}
+										else if(enter_position == ENTER_POSITION_LOWER)
+										{
+
+													menu_index++;
+													if(menu_index	> 4) menu_index = 4;
+											
+													set_cursor(1,0);
+													printf_lcd(lcd_menu[menu_index]);
+													set_cursor(2,0);
+													printf_lcd(lcd_menu[menu_index+1]);
+											
+													enter_character(enter_position);
+										}
+										
+										enter_index = enter_position + menu_index;
+									}
+									else if(i == UP_BUTTON)
+									{
+										if(enter_position == ENTER_POSITION_LOWER)
+										{
+											enter_position = ENTER_POSITION_UPPER;
+											enter_character(enter_position);
+										}		
+										else if(enter_position == ENTER_POSITION_UPPER && menu_index !=0 )
+										{
+													menu_index--;
+													if(menu_index	< 0) menu_index = 0;
+											
+													set_cursor(1,0);
+													printf_lcd(lcd_menu[menu_index]);
+													set_cursor(2,0);
+													printf_lcd(lcd_menu[menu_index+1]);
+											
+													enter_character(enter_position);
+											
+										}							
+										
+										enter_index = enter_position + menu_index;
+									}	
+									else if(i == ENTER_BUTTON){
+											if(enter_index == 0)
+											{
+												led_on();
+											}
+											else if(enter_index == 1)
+											{
+												led_off();
+											}
+
+									}	
+									
+									
+								}
+							}
+					}
+		}			
+		
+		if(curr_millis - prev_millis_pwm > 1000)  // 1000 : 10 ms
+		{
+			prev_millis_pwm = curr_millis;
+			
+			backlignt_pwm_duty += 20;
+			if(backlignt_pwm_duty > 1980) backlignt_pwm_duty = 20;
+		}
+		
+
+		if(curr_millis - prev_millis_pwm_led > 1000)
+		{
+			prev_millis_pwm_led - curr_millis;
+			
+			led_pwm_duty += 60;
+			if(led_pwm_duty > 1980) led_pwm_duty = 20;
+			
+		}
+	
+		// BL Touch Millis
+		if(curr_millis - prev_millis_bl_touch > 100000)
+		{
+			prev_millis_bl_touch - curr_millis;
+			
+			if(bl_touch_toggle == 0)
+			{
+				bl_touch_toggle = 1;
+				bl_touch_duty = 65;
+			}
+			else
+			{
+				bl_touch_toggle = 0;
+				bl_touch_duty = 147;
+			}			
+		}		
+		
+		
+		
+//		set_cursor(1,0);
+//		printf_lcd("count = %d", count++);
+		
+//		sprintf(buff, "count = %d", count++);
+//		charLCD_sting(buff);
+		
+		
+		//set_data_8bit(0x31);
+		//Delay(100000);
+		
+//		GPIOE->BSRR = (0x01 << 5);
+//		Delay(50000);
+//		GPIOE->BRR = (0x01 << 5);
+//		Delay(50000);		
+	}
+	
+	
+	
+	
+	while(1);
+	
+
+	
+	// RCC
+	RCC->APB2ENR |= (0x01 << 3) | (0x01 << 6);  // GPIOB, GPIOE
+	
+	GPIOB->CRL &= ~(0x0F << 5*4);  // GPIOB.5
+	GPIOB->CRL |= (0x03 << 5*4);
+	
+	GPIOE->CRL &= ~(0x0F << 2*4);  // GPIOE.2
+	GPIOE->CRL |= (0x03 << 2*4);
+	
+	GPIOB->BSRR = (0x01 << 5);  // Buzzer
+	
+	// [ UART 1 ]
+	// RCC
+	RCC->APB2ENR |=  (0x01 << 2) | (0x01 << 14);  // 2 : GPIOA, 14 : UART1
+	// GPIOA
+	GPIOA->CRH &= ~(0x0f << 1*4);  // GPIOA.9 clear
+	GPIOA->CRH &= ~(0x0f << 2*4);  // GPIOA.10 clear
+	GPIOA->CRH |= (0x0b << 1*4);  // GPIOA.9 : alternate output push-pull
+	GPIOA->CRH |= (0x04 << 2*4);  // GPIOA.10 : floating input
+	// UART1
+	USART1->CR1 = (0x01 << 3) | (0x01 << 2) | (0x01 << 13);  // 3: TE, 2:RE, 13:UE
+	USART1->BRR = 0x271;
+	
+	
+	while(1)
+	{
+//			GPIOE->BSRR = (0x01 << 2);
+//			Delay(100000);
+//			GPIOE->BRR = (0x01 << 2);
+//			Delay(100000);
+		
+		printf("haha\n\r");
+		Delay(100000);
+		printf("hoho\n\r");
+		Delay(100000);		
+	}
+	
+	
+	
+	
+	
+	
+	while(1);
+	
+	
+	
+	//SYSTIC
+	SysTick->LOAD = 720;
+	SysTick->CTRL = 0x07;
+	
+	// RCC GPIOA, USART1
+	RCC->APB2ENR |= (0x01 << 2) | (0x01 << 14);  // 2 : GPIOA , 14 : USART1
+	
+	// TIM2 clock
+	RCC->APB1ENR |= (0x01 << 0);  // 0 : timer2
+	
+	// GPIOA.9
+	GPIOA->CRH &= ~(0x0F << 4);
+	GPIOA->CRH |= (0x0B << 4);
+	// GPIOA.10
+	GPIOA->CRH &= ~(0x0F << 8);
+	GPIOA->CRH |= (0x04 << 8);
+	//GPIOA.4
+	GPIOA->CRL &= ~(0x0F << 4*4);
+	GPIOA->CRL |= (0x03 << 4*4);
+	
+	// USART1
+	USART1->CR1 = (0X01 << 2) | (0X01 << 3) | (0X01 << 13);  // 2 : RE, 3 : TE, 13 : UE
+	USART1->CR2 = 0x00;
+	USART1->CR3 = 0x00;
+	USART1->BRR = 0x271;
+	
+	//EXTI 3
+	EXTI->IMR = (0x01 << 3);
+	EXTI->FTSR =  (0x01 << 3);
+	
+	// Timer2
+	TIM2->CR1 = (0x01 << 0); // 0: CEN
+	TIM2->CR2 = 0x00;
+	TIM2->CNT = 0;
+	TIM2->PSC = 720 - 1;
+	TIM2->ARR = 2000 - 1;
+	TIM2->DIER = (0x01 << 0) | (0x01 << 1);  // 0: UIE, 1:CC1IE
+	TIM2->CCMR1 = 0x68;
+	TIM2->CCER = 0x01;
+	TIM2->CCR1 = 70;
+	
+	//NVIC.EXTI3
+	NVIC->ISER[0] |= (0x01 << 9);
+	// Timer2
+	NVIC->ISER[0] |= (0x01 << 28);
+	
+	
+	for(i=0;i<10;i++)
+		printf("haha: %d\n\r", i);
+	
+	//==============================================
+	
+	while(1)
+	{
+		//------------------------------------------
+		
+		curr_micros = micros_10us();
+		if(curr_micros - pre_micros > 100*20)  // 100 : 1ms millis
+			{
+				pre_micros = curr_micros;
+					
+				if(servo_millis_enable == 1)
+				{
+					servo_duty_1++;
+					if(servo_duty_1 > 230) servo_duty_1 = 70;
+				}					
+
+				
+
+					
+//				if(test_toggle == 0)
+//				{
+//					test_toggle = 1;
+//					servo_duty_1 = 70;
+//				}
+//				else
+//				{
+//					test_toggle = 0;
+//					servo_duty_1 = 230;
+//				}
+				
+			}
+			
+			//------------------------------------------
+			// Remocon
+			
+			if(exti_callback_flag == 1)
+			{
+				exti_callback_func();
+			}
+				//------------------------------------------		
+	}
+	
+	
+//	for(i=0;i<10;i++)
+//	{
+//		while(!(USART1->SR & (0x01 << 7)));
+//		USART1->DR = 0x30 + i;
+//	}
+	
+	while(1);
+	
+		//============================================
+//	// PA0
+//	*((volatile int *)0x40010800) = 0x44444443;
+//	
+//	// PA1
+//	*((volatile int *)0x40010800) &= ~(0x0f << 4);
+//	*((volatile int *)0x40010800) |= (0x03 << 4);
+//	
+//	
+//	while(1)
+//	{
+//	*((volatile int *)0x4001080C) = 0x01;
+//		*((volatile int *)0x4001080C) |= 0x02;
+//	Delay_ms(10);
+//	*((volatile int *)0x4001080C) = 0x00;
+//				*((volatile int *)0x4001080C) &= ~0x02;
+//	Delay_ms(10);
+//	}
+//	
+//	while(1);
+	//============================================
+	
+//	GPIOA_CRL = 0x44444400;
+//	GPIOA_CRL |= (0x04 << 0); // Float Input
+//	GPIOA_CRL |= (0x03 << 4);// Output 50MHz Push-Pull
+//	
+//	while(1)
+//	{	
+//		if(GPIOA_IDR & 0x01)
+//		{
+//			GPIOA_ODR |= 0x02;
+//		}
+//		else
+//		{
+//			GPIOA_ODR &= ~0x02;
+//		}
+//}
+//============================================
+		
+//	GPIOA_CRL = 0x44444400;
+//	GPIOA_CRL |= (0x03 << 4);// Output 50MHz Push-Pull		
+//		
+//	while(1)
+//	{
+//		if(count == 100)
+//		{
+//			count = 0;
+//			GPIOA_ODR |= 0x02;
+//		}
+//		else if(count == var_pwm)
+//		{
+//			GPIOA_ODR &= ~0x02;			
+//		}
+//		
+//		count++;
+//	//--------------------------
+//			
+//		
+//		count_10ms++;
+//		if(count_10ms > 100)
+//		{
+//			count_10ms = 0;
+//			var_pwm++;
+//			if(var_pwm == 99) var_pwm = 1;
+//		}
+//		
+//	//----------------------------	
+//		Delay_us(100);
+//	}
+//	
+	
+//============================================
+	GPIOA_CRL = 0x44444400;
+	GPIOA_CRL |= (0x04 << 0);// Floating Input	
+	GPIOA_CRL |= (0x03 << 4);// Output 50MHz Push-Pull		
+		
+	
+	
+	
+//============================================
+	
+	while(1);
+	
+	
+	
+	// systick
+	SysTick->LOAD = 720;
+	SysTick->CTRL = 0x07;
+
+	//clock
+	RCC->APB2ENR |= 0x01 << 2;  // GPIOA clock enable
+	RCC->APB2ENR |= 0x01 << 4;  // GPIOC clock enable
+	RCC->APB2ENR |= 0x01 << 9;  // ADC1 clock enable	
+	RCC->APB1ENR |= 0x01 << 0; // timer2 clock enable
+	RCC->APB1ENR |= 0x01 << 1; // timer3 clock enable
+	RCC->AHBENR |= 0x01 << 0; // DMA1 clock enable
+	
+	//GPIOA.5 : GPIO output push/pull 50MHz
+	GPIOA->CRL &= ~(0x0f << 20);
+	GPIOA->CRL |= 0x03 << 20;
+	//GPIOA.8 : GPIO output push/pull 50MHz
+	GPIOA->CRH &= ~(0x0f << 0);
+	GPIOA->CRH |= 0x03 << 0;
+	//GPIOC.0 : GPIO floating Input mode 
+	GPIOC->CRL &= ~(0x0f << 0);
+	GPIOC->CRL |= 0x04 << 0;	
+	//GPIOC.13 : GPIO floating Input mode 
+	GPIOC->CRH &= ~(0x0f << 24);
+	GPIOC->CRH |= 0x04 << 24;		
+	//GPIOA.0 : GPIO analog input
+	GPIOA->CRL &= ~(0x0f << 0);
+	GPIOA->CRL |= 0x00 << 0;	
+	
+	
+	//EXTI 0
+	EXTI->IMR |= 0x01;
+	EXTI->FTSR |= 0x01;
+	AFIO->EXTICR[0] |= 0x02;  // PC.0 interrupt
+
+	// EXTI 13
+	EXTI->IMR |= 0x01 << 13;
+	EXTI->FTSR |= 0x01 << 13;
+	EXTI->RTSR |= 0x01 << 13;
+	AFIO->EXTICR[3] |= 0x20;  // PC.13 interrupt
+
+	//timer2
+	TIM2->CR1 |= 0x01;  // timer2 count enable
+	TIM2->PSC = 72;  // 72MHz / 72 = 1MHz
+	TIM2->ARR = 2000;
+	TIM2->CNT = 0x00;
+	TIM2->DIER |= 0x03; // update/capture compare interrupt enable
+	TIM2->CCMR1 = 0x60;
+	TIM2->CCR1 = 200;
+
+	//timer3
+	TIM3->CR1 |= 0x01;  // timer3 count enable
+	TIM3->PSC = 72;  // 72MHz / 72 = 1MHz
+	TIM3->ARR = 20000;
+	TIM3->CNT = 0x00;
+	TIM3->DIER |= 0x03; // update/capture compare interrupt enable
+	TIM3->CCMR1 = 0x60;
+	TIM3->CCR1 = 2000;
+	
+	
+	//DMA
+	DMA1_Channel1->CNDTR = 0x01;
+	DMA1_Channel1->CPAR = 0x4001244c;  // adc data register
+	DMA1_Channel1->CMAR = (unsigned int)&adc_value_x;
+	DMA1_Channel1->CCR = 0x521;
+	
+	// ADC
+	ADC1->CR1 = 0x100;
+	ADC1->CR2 = 0x1E0103;
+	ADC1->SMPR1 = 0x00;
+	ADC1->SMPR2 = 0x05;
+	
+	
+	//NVIC
+	NVIC->ISER[0] |= 0x01 << 28; //timer2 interrupt enable
+	NVIC->ISER[0] |= 0x01 << 29; //timer3 interrupt enable
+	
+	NVIC->ISER[0] |= 0x01 << 6; //EXTI0 interrupt enable
+	NVIC->ISER[1] |= 0x01 << (40-32); //EXTI15_10 interrupt enable
+
+//=================================
+// Servo/LED pwm variable duty
+
+	while(1)
+	{
+		c_mic = micros_10us();
+		if(c_mic - p_mic1 > 1000)
+		{
+			p_mic1 = c_mic;
+			
+			pwm_duty+=20;
+			if(pwm_duty > 1999) pwm_duty = 20;	
+
+			TIM2->CCR1 = pwm_duty;			
+		}	
+
+		if(c_mic - p_mic2 > 2000)
+		{
+			p_mic2 = c_mic;
+			
+			servo_duty+=16;
+			if(servo_duty > 2300) servo_duty = 700;	
+			TIM3->CCR1 = servo_duty;
+			
+		}			
+		
+		
+		//------------------------------------------
+		// Remocon
+			if(remocon_flag == 1)
+			{
+				remocon_flag = 0;
+				
+				for(i=0;i<32;i++){
+					if(remocon_diff_time[i+1] > 1000 && remocon_diff_time[i+1] < 1500)
+					{
+						remocon_data_bit[i] = 0;
+					}
+					else if(remocon_diff_time[i+1] > 2000 && remocon_diff_time[i+1] < 2500)
+					{
+						remocon_data_bit[i] = 1;
+					}						
+					
+				}
+				
+				remocon_hex_data = 0;
+				for(i=0;i<8;i++)
+				{
+					remocon_hex_data = remocon_hex_data << 1;
+					if(remocon_data_bit[16+i]  == 1){
+						remocon_hex_data |= 0x01;
+					}
+				}
+				
+				remocon_data = (char)remocon_hex_data;
+				
+				remocon_value = 0;
+				for(i=0;i<10;i++)
+				{
+					if(remocon_data == rem_data[i])
+					{
+						remocon_value = i;
+						remocon_pre_value= i;
+						break;
+					}						
+				}
+			}
+		
+	}
+
+//=================================
+// LED pwm variable duty
+
+//	while(1)
+//	{
+//		c_mic = micros_10us();
+//		if(c_mic - p_mic1 > 1000)
+//		{
+//			p_mic1 = c_mic;
+//			
+//			pwm_duty+=20;
+//			if(pwm_duty > 1999) pwm_duty = 20;	
+
+//			TIM2->CCR1 = pwm_duty;			
+//		}		
+//	}
+
+//=================================
+// LED pwm variable duty
+
+//	while(1)
+//	{
+//		c_mic = micros_10us();
+//		if(c_mic - p_mic1 > 1000)
+//		{
+//			p_mic1 = c_mic;
+//			
+//			pwm_duty++;
+//			if(pwm_duty == 99) pwm_duty = 1;				
+//		}		
+//	}
+	
+//=================================
+// LED toggle
+
+//	while(1)
+//	{
+//		c_mic = micros_10us();
+//		if(c_mic - p_mic1 > 10000)
+//		{
+//			p_mic1 = c_mic;
+//			
+//			if(led_toggle == 0){
+//				led_toggle = 1;
+//				GPIOA->BSRR = 0x01 << 5;
+//			}
+//			else if(led_toggle == 1){
+//				led_toggle = 0;
+//				GPIOA->BRR = 0x01 << 5;
+//			}
+//				
+//		}
+//	}
+	
+//=====================================================	
+	
+//	while(1)
+//	{
+//		GPIOA->ODR |= 0x01 << 5;
+//		//GPIOA->BSRR = 0x01 << 5;
+//		
+//		Delay(100);
+//		
+//		//GPIOA->ODR &= ~(0x01 << 5);
+//		GPIOA->BRR = 0x01 << 5;
+//		
+//		Delay(100);		
+//	}
+
+	
+	
+	//====================================================
+	
+	
+
+
+	
+				*(volatile unsigned int *)0x40021018 |= 0x08;
+	
+	RCC->APB2ENR |= 0x04;
+	
+		GPIOB->CRL = 0x33333333;
+		GPIOB->ODR = 0x20;
+	
+		GPIOB->ODR |= 0xC0;
+	
+	
+//				*(volatile unsigned int *)0x40011004 &= ~(0x0f << 20);
+//	 *(volatile unsigned int *)0x40011004 |= (0x04 << 20);
+	
+//	
+//				*(volatile unsigned int *)0x40010800 = 0x03;
+	
+	//GPIOB->CRL &= ~(0x0f << 28);
+	//GPIOB->CRL |= (0x04 << 28);
+	
+ for(;;) {
+
+
+//			*(volatile unsigned int *)0x4001100c = 0x00;	 
+//			Delay(20000);
+//			*(volatile unsigned int *)0x4001100c = 0x2000;
+			Delay(20000);		
+		
+	// test=GPIOB->IDR;
+		
+//    GPIOB->ODR &= ~LED;                           // switch on LED
+//    GPIOB->ODR &= ~LED6;                           // switch on LED
+//    GPIOB->ODR |= LED7;                           // switch on LED
+//	Delay(2000000);
+//    GPIOB->ODR |=  LED;                           // switch off LED
+//    GPIOB->ODR |=  LED6;                           // switch on LED
+//    GPIOB->ODR &=  ~LED7;                           // switch on LED
+	//Delay(2000000);
+
+    }
+   
+  }
+
+
+
+#include <stdio.h>
+
+int fputc(int ch, FILE *f)
+{
+	while(!(USART2->SR & (0x01 << 7) ) );
+	USART2->DR = (unsigned char)ch;
+  	return ch;
+}
+
+/*----------------------------------------------------------*\
+ | END OF FILE                                              |
+\*----------------------------------------------------------*/

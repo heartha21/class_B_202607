@@ -26,5 +26,8 @@
     <Text Include="1_source_cubeIDE_main_c_20260710.txt">
       <Filter>소스 파일</Filter>
     </Text>
+    <Text Include="3_keil_GPIO_Systick_20260721.txt">
+      <Filter>소스 파일</Filter>
+    </Text>
   </ItemGroup>
 </Project>
