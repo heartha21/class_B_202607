@@ -57,7 +57,6 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
 //--------------------
 uint32_t millis();
 uint32_t micros();
@@ -65,6 +64,7 @@ void delay_ms(uint32_t ms);
 void delay_us(uint32_t us);
 //--------------------
 uint32_t prev_millis = 0;
+uint32_t prev_millis_led_toggle = 0;
 uint32_t prev_millis_1 = 0;
 uint32_t prev_millis_1sec = 0;
 uint32_t prev_millis_key_10ms = 0;
@@ -189,101 +189,139 @@ int main(void)
 //	  delay_us(100);
 //	  //----------------------------------------
 
+//
+//	  //----------------------------------------
+//	  uint32_t curr_micros = micros();
+//	  uint32_t curr_millis = millis();
+//	  //----------------------------------------
+//	  if(curr_micros - prev_micros >= 100)
+//	  {
+//		  prev_micros = curr_micros;
+//
+//		  if(count == 100)
+//		  {
+//			  count = 0;
+//
+//			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6, GPIO_PIN_RESET); // PF6 : LED On
+//			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_7, GPIO_PIN_RESET); // PF7 : LED On
+//		  }
+//
+//		  if(count == duty)
+//		  {
+//			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6, GPIO_PIN_SET); // PF6 : LED Off
+//		  }
+//
+//		  if(count == duty2)
+//		  {
+//			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_7, GPIO_PIN_SET); // PF6 : LED Off
+//		  }
+//
+//		  count++;
+//	  }
+//	  //----------------------------------------
+//	  if(curr_millis - prev_millis >= 10)
+//	  {
+//		  prev_millis = curr_millis;
+//
+//		  count_10ms++;
+//
+//		  if(count_10ms >= 1) // 1 : 10 ms
+//		  {
+//			  duty++;
+//			  if(duty == 99)
+//			  {
+//				  duty = 1;
+//			  }
+//		  }
+//
+//		  if(count_10ms == 2)  // 2 : 20ms
+//		  {
+//			  count_10ms = 0;
+//
+//			  duty2++;
+//			  if(duty2 == 99)
+//			  {
+//				  duty2 = 1;
+//			  }
+//		  }
+//
+//	  }
+//	  //----------------------------------------
+//	  if(curr_millis - prev_millis_1sec >= 1000)
+//	  {
+//		  prev_millis_1sec = curr_millis;
+//
+//		  printf("haha = %d \n\r", count_1sec++);
+//	  }
+//	  //----------------------------------------
+//	  if(curr_millis - prev_millis_key_10ms >= 10)
+//	  {
+//			prev_millis_key_10ms = curr_millis;
+//			//-----------------------------------------
+//			// BTN 1
+//			uint8_t btn1_value = HAL_GPIO_ReadPin(GPIOF, GPIO_PIN_9);
+//			if (btn1_value == 1 && flag_btn1 == 1)
+//			{
+//				flag_btn1 = 0;
+//			//				printf("BT1 : UP \r\n");
+//			}
+//			else if(btn1_value == 0 && flag_btn1 == 0)
+//			{
+//				flag_btn1 = 1;
+//				printf("BT1 : DOWN \r\n");
+//			}
+//			//-----------------------------------------
+//			// BTN 2
+//			uint8_t btn2_value = HAL_GPIO_ReadPin(GPIOF, GPIO_PIN_10);
+//			if (btn2_value == 1 && flag_btn2 == 1)
+//			{
+//				flag_btn2 = 0;
+//			//				printf("BT2 : UP \r\n");
+//			}
+//			else if(btn2_value == 0 && flag_btn2 == 0)
+//			{
+//				flag_btn2 = 1;
+//				printf("BT2 : DOWN \r\n");
+//			}
+//			//-----------------------------------------
+//	  }
+//
+//	  //----------------------------------------
+
+
 
 	  //----------------------------------------
-	  uint32_t curr_micros = micros();
+	  // typedef unsigned int uint32_t
+	  // millis() : 현재 누적된 millisecond 값을 반환한다.
 	  uint32_t curr_millis = millis();
 	  //----------------------------------------
-	  if(curr_micros - prev_micros >= 100)
-	  {
-		  prev_micros = curr_micros;
 
-		  if(count == 100)
-		  {
-			  count = 0;
-
-			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6, GPIO_PIN_RESET); // PF6 : LED On
-			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_7, GPIO_PIN_RESET); // PF7 : LED On
-		  }
-
-		  if(count == duty)
-		  {
-			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6, GPIO_PIN_SET); // PF6 : LED Off
-		  }
-
-		  if(count == duty2)
-		  {
-			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_7, GPIO_PIN_SET); // PF6 : LED Off
-		  }
-
-		  count++;
-	  }
-	  //----------------------------------------
-	  if(curr_millis - prev_millis >= 10)
+	  if(curr_millis - prev_millis >= 1000)
 	  {
 		  prev_millis = curr_millis;
 
-		  count_10ms++;
-
-		  if(count_10ms >= 1) // 1 : 10 ms
-		  {
-			  duty++;
-			  if(duty == 99)
-			  {
-				  duty = 1;
-			  }
-		  }
-
-		  if(count_10ms == 2)  // 2 : 20ms
-		  {
-			  count_10ms = 0;
-
-			  duty2++;
-			  if(duty2 == 99)
-			  {
-				  duty2 = 1;
-			  }
-		  }
-
+		  printf("haha = %d \r\n", count++);
 	  }
 	  //----------------------------------------
-	  if(curr_millis - prev_millis_1sec >= 1000)
+	  if(curr_millis - prev_millis_led_toggle >= 1000)
 	  {
-		  prev_millis_1sec = curr_millis;
+		  prev_millis_led_toggle = curr_millis;
 
-		  printf("haha = %d \n\r", count_1sec++);
-	  }
-	  //----------------------------------------
-	  if(curr_millis - prev_millis_key_10ms >= 10)
-	  {
-			prev_millis_key_10ms = curr_millis;
-			//-----------------------------------------
-			// BTN 1
-			uint8_t btn1_value = HAL_GPIO_ReadPin(GPIOF, GPIO_PIN_9);
-			if (btn1_value == 1 && flag_btn1 == 1)
-			{
-				flag_btn1 = 0;
-			//				printf("BT1 : UP \r\n");
-			}
-			else if(btn1_value == 0 && flag_btn1 == 0)
-			{
-				flag_btn1 = 1;
-				printf("BT1 : DOWN \r\n");
-			}
-			//-----------------------------------------
-			// BTN 2
-			uint8_t btn2_value = HAL_GPIO_ReadPin(GPIOF, GPIO_PIN_10);
-			if (btn2_value == 1 && flag_btn2 == 1)
-			{
-				flag_btn2 = 0;
-			//				printf("BT2 : UP \r\n");
-			}
-			else if(btn2_value == 0 && flag_btn2 == 0)
-			{
-				flag_btn2 = 1;
-				printf("BT2 : DOWN \r\n");
-			}
-			//-----------------------------------------
+		  // flag toggle 방법 :
+		  // led_flag == 0 일 때 if 문이 실행되고(led_flag = 1 대입),
+		  // led_flag == 1 일 때 else 문이 실행된다(led_flag = 0 대입).
+		  if(led_flag == 0)
+		  {
+			  led_flag = 1;
+
+			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_8, GPIO_PIN_RESET); // PF8 : LED On
+		  }
+		  else
+		  {
+			  led_flag = 0;
+
+			  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_8, GPIO_PIN_SET); // PF8 : LED Off
+		  }
 	  }
 
 	  //----------------------------------------
@@ -391,10 +429,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOF, GPIO_Output_LED1_Pin|GPIO_Output_LED2_Pin|GPIO_Output_LED3_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PF6 PF7 PF8 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8;
+  /*Configure GPIO pins : GPIO_Output_LED1_Pin GPIO_Output_LED2_Pin GPIO_Output_LED3_Pin */
+  GPIO_InitStruct.Pin = GPIO_Output_LED1_Pin|GPIO_Output_LED2_Pin|GPIO_Output_LED3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
