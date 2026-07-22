@@ -21,6 +21,9 @@
     <ClCompile Include="2_keil_GPIO_main_c_20260721.txt">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="7_keil_GPIO_EXTI_20260722.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="1_source_cubeIDE_main_c_20260710.txt">
