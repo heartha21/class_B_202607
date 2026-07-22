@@ -125,6 +125,7 @@
   <ItemGroup>
     <ClCompile Include="2_keil_GPIO_main_c_20260721.txt" />
     <ClCompile Include="7_keil_GPIO_EXTI_20260722.cpp" />
+    <ClCompile Include="8_keil_GPIO_TIM2_20260722.txt" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
