@@ -35,5 +35,8 @@
     <Text Include="5_keil_GPIO_uart_gpio_send_20260721.txt">
       <Filter>소스 파일</Filter>
     </Text>
+    <Text Include="6_keil_GPIO_uart_gpio_send_delay이용_20260722.txt">
+      <Filter>소스 파일</Filter>
+    </Text>
   </ItemGroup>
 </Project>

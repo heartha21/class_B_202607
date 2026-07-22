@@ -131,6 +131,7 @@
     <Text Include="3_keil_GPIO_Systick_20260721.txt" />
     <Text Include="4_keil_GPIO_Systick_micros_20260721.txt" />
     <Text Include="5_keil_GPIO_uart_gpio_send_20260721.txt" />
+    <Text Include="6_keil_GPIO_uart_gpio_send_delay이용_20260722.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
