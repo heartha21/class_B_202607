@@ -32,7 +32,7 @@
     <Text Include="4_keil_GPIO_Systick_micros_20260721.txt">
       <Filter>소스 파일</Filter>
     </Text>
-    <Text Include="5_keil_GPIO_uart_gpio_send.txt">
+    <Text Include="5_keil_GPIO_uart_gpio_send_20260721.txt">
       <Filter>소스 파일</Filter>
     </Text>
   </ItemGroup>
