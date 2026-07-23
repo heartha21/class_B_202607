@@ -135,7 +135,7 @@
     <Text Include="5_keil_GPIO_uart_gpio_send_20260721.txt" />
     <Text Include="6_keil_GPIO_uart_gpio_send_delay이용_20260722.txt" />
     <Text Include="9_keil_GPIO_TIM3_uart_send.txt" />
-    <Text Include="cube_ide_ADC_1channel_20260723.txt" />
+    <Text Include="10_cube_ide_ADC_1channel_20260723.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

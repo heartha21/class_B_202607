@@ -47,7 +47,7 @@
     <Text Include="9_keil_GPIO_TIM3_uart_send.txt">
       <Filter>소스 파일</Filter>
     </Text>
-    <Text Include="cube_ide_ADC_1channel_20260723.txt">
+    <Text Include="10_cube_ide_ADC_1channel_20260723.txt">
       <Filter>소스 파일</Filter>
     </Text>
   </ItemGroup>
