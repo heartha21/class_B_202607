@@ -131,6 +131,7 @@
   <ItemGroup>
     <Text Include="11_keil_I2C_gpio_20260724.txt" />
     <Text Include="12_keil_I2C_gpio_from_start_to_stop_20260724.txt" />
+    <Text Include="13_keil_I2C_gpio_from_start_to_stop_while_20260724.txt" />
     <Text Include="1_source_cubeIDE_main_c_20260710.txt" />
     <Text Include="3_keil_GPIO_Systick_20260721.txt" />
     <Text Include="4_keil_GPIO_Systick_micros_20260721.txt" />

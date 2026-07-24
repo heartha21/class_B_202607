@@ -1,0 +1,556 @@
+
+
+// [][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][] //
+// Delay_10us(50) 			=> delay 50us
+// Delay_ms(30) 			=> delay 30ms
+// CheckMillis() 			=> check elapsed time(us) after POR
+// CheckMicros() 			=> check elapsed time(ms) after POR
+// printf(format)   		=> print using UART
+// gpioA_High[Low](pin#)	=> output high[Low] on PA, pin#
+// gpioB_High[Low](pin#)	=> output high[Low] on PB, pin#
+
+// attachInterrupt(pin#, userFuncName, intMode)
+//							=>	GPIOC pin# 	 : 10, 11, 12, 13, 14, 15
+//								userFuncName : user function name
+//                                             (which is called in EXTI IRQ Handler) 
+// 								intMode		 :	EXTI_Trigger_Rising
+//				  							    EXTI_Trigger_Falling 
+//				 							    EXTI_Trigger_Rising_Falling
+
+// Init_Timer2UpdateInterrupt(20) => Timer2 update interrupt per 20us
+// UserFnTime2()				  => user function (called in TIM2 IRQ Handler)
+
+// Init_Timer3UpdateInterrupt(50) => Timer3 update interrupt per 50us
+// UserFnTime3()				  => user function (called in TIM3 IRQ Handler)
+
+
+// pinMode(port, pin, in/out) => set pin as input or output 
+//								port : GPIO_A, GPIO_B, GPIO_C
+//								pin : each 0 ~ 15 or ALL_PIN
+//								in/out : INPUT or OUTPUT
+// digitalWriteBit(port, pin, bitValue) 
+//							=> port : GPIO_A, GPIO_B, GPIO_C
+//							   pin  : 0 ~ 15
+//							   bitValue : HIGH, LOW (or 1 / 0)
+// digitalWritePort(port, portValue)
+//							=> port : GPIO_A, GPIO_B, GPIO_C
+//                             portValue : port value  
+// digitalReadBit(port, pin) => bit read
+// digitalReadPort(port)     => port read
+// [][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][] //
+
+
+
+
+#include "user.h"
+
+void aaa(void);
+int tmp_a=3;
+
+volatile void userFn15(void);
+volatile void userFn14(void);
+volatile void userFn13(void);
+volatile void userFn12(void);
+volatile void userFn11(void);
+volatile void userFn10(void);
+
+//inline void userFnTim2(void);
+volatile void userFnTim2(void);
+volatile void userFnTim3(void);
+
+// for Timer interrupt test (toggle based on these value)
+volatile unsigned char state0 = 0, state1 = 0;
+
+// for digital read / write test
+unsigned long currentMillis = 0, previousMillis0 = 0, previousMillis1 = 0;
+unsigned short portVal;
+int direction = 1;
+
+int shift_column = 0;
+
+
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+void setup()
+{
+//	// for digitalWritePort test
+pinMode(GPIO_A, ALL_PIN, OUTPUT);
+//pinMode(GPIO_B, ALL_PIN, OUTPUT);
+pinMode(GPIO_C, ALL_PIN, INPUT);
+	
+//pinMode(GPIO_A, 2, INPUT);
+
+	
+	//	// for Timer interrupt test
+//	pinMode(GPIO_B, 0, OUTPUT);
+//	pinMode(GPIO_B, 1, OUTPUT);
+//	// for digitalReadBit / digitalWriteBit test
+//	pinMode(GPIO_B, 2, INPUT);
+//	pinMode(GPIO_B, 3, OUTPUT);
+//	// for digitalReadPort test
+//	pinMode(GPIO_C, ALL_PIN, INPUT);
+//	
+//	
+//	// GPIOC.15 is configured as external interrupt with rising and falling edge trigger.
+//	attachInterrupt(15, userFn15, EXTI_Trigger_Rising_Falling);
+//	attachInterrupt(14, userFn14, EXTI_Trigger_Rising_Falling);
+//	// GPIOC.13 is configured as external interrupt with falling edge trigger.
+//	attachInterrupt(13, userFn13, EXTI_Trigger_Falling );
+//	attachInterrupt(12, userFn12, EXTI_Trigger_Falling );
+//	attachInterrupt(11, userFn11, EXTI_Trigger_Rising);
+//	attachInterrupt(10, userFn10, EXTI_Trigger_Rising_Falling);
+
+//	// Timer2 is configured as update interrupt per 20us
+//	Init_Timer2UpdateInterrupt(100);
+////	Init_Timer3UpdateInterrupt(1000);
+	
+	aaa();
+
+	// check time after stable system
+	previousMillis0 = previousMillis1 = CheckMillis();
+}
+
+
+ #define SCL	0
+ #define SDA 	1
+
+void i2c_sda_high()
+{
+	GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA High
+}
+
+void i2c_sda_low()
+{
+	GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Low
+}
+
+void i2c_scl_high()
+{
+	GPIOA->ODR |= (0x01 << SCL); // SCL High
+}
+
+void i2c_scl_low()
+{
+	GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+}
+
+void i2c_init()
+{
+	// I2C Pull Up 초기화 상태
+	i2c_scl_high();
+	Delay_ms(1);	
+	i2c_sda_high();
+	Delay_ms(1);
+}
+
+void i2c_start()
+{
+	// SCK 가 High 상태에서 SDA 가 Low 로 바뀌는 상태
+	i2c_sda_low();
+	Delay_ms(1);	
+	// SCL Low : 데이터를 넣기 위해서 SCL 을 Low 로 한 다음에 SCL 을 계속 High->Low 로 한다.
+	i2c_scl_low();
+	Delay_ms(1);
+}
+
+void i2c_byte_write(uint8_t data)
+{
+	int i = 0;
+
+	for(i=0;i<8;i++)
+	{
+		// (0x01 << i) : 0 0 0 0_0 0 0 1 << 0 ==> 0 0 0 0_0 0 0 1 &
+		//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
+		//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
+		//										  0 0 0 0_0 0 0 1
+		if( (data & (0x01 << (7-i)) ) > 0)
+		{
+			i2c_sda_high();
+		}
+		else
+		{
+			i2c_sda_low();
+		}
+
+		// (0x01 << SCL) : 0x01 을 SCL(0) 만큼 좌쉬프트한다. => ( 0 0 0 0_0 0 0 1 << 0 ) ==> 0x01 값 자체이다.
+		// ( GPIOA->ODR | 0x01 ) 한 값을 GPIOA->ODR 에 대입한다.(GPIOA->ODR = GPIOA->ODR | 0x01)
+		// 복합대입연산자 를 이용해서 정리하면  [GPIOA->ODR |= (0x01 << SCL) ] 된다.
+		// GPIOA->ODR |= (0x01 << SCL); // SCL High
+		i2c_scl_high();
+		Delay_ms(1);
+		// GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+		i2c_scl_low();
+		Delay_ms(1);
+	}
+}
+
+void i2c_ack()
+{
+	// Address Ack Check
+	i2c_scl_high();
+	Delay_ms(1);
+	i2c_scl_low();
+	Delay_ms(1);
+}
+
+void i2c_stop()
+{
+	i2c_sda_low();
+	Delay_ms(1);
+	i2c_scl_high();
+	Delay_ms(1);
+	i2c_sda_high();
+	Delay_ms(1);
+}
+
+#define EEPROM_DEV_ID	0xA0  // 0xA0 : 1 0 1 0_0 0 0 0  <== 7 bit (1 0 1_0 0 0 0) + Write Bit 0
+void eeprom_write(uint8_t eeprom_addr, uint8_t eeprom_data)
+{
+	i2c_start();
+	i2c_byte_write(EEPROM_DEV_ID);  // eeprom device address
+	i2c_ack();
+	i2c_byte_write(eeprom_addr);  // eeprom memory address
+	i2c_ack();
+	i2c_byte_write(eeprom_data);  // eeprom data
+	i2c_ack();
+	i2c_stop();
+}
+
+void loop()
+{
+	int i = 0;
+	uint8_t eeprom_addr = 0x01;
+	uint8_t eeprom_data = 0x03;
+	uint16_t count_eeprom = 0;
+
+	// while(1)
+	// {
+	// 	gpioA_High(0);
+	// 	Delay_ms(1);
+	// 	gpioA_Low(0);
+	// 	Delay_ms(1);	
+	// }
+	
+	//------------------
+	// i2c_init();
+
+	// eeprom_write(0x05, 0x55);
+
+	// while(1);
+	//------------------
+	i2c_init();
+
+	while(1)
+	{
+		eeprom_write(eeprom_addr, eeprom_data);
+
+		count_eeprom++;
+		if(count_eeprom == 100)
+		{
+			count_eeprom = 0;
+		}
+		eeprom_addr=count_eeprom;
+		eeprom_data=count_eeprom;
+		Delay_ms(100);
+	}
+	
+
+
+	//-------------------------------
+	// EEPROM I2C 통신
+	// I2C Pull Up 초기화 상태
+	gpioA_High(SCL);  // 
+	Delay_ms(1);	
+	gpioA_High(SDA);
+	Delay_ms(1);	
+	// Start Condition : 
+	// SCK 가 High 상태에서 SDA 가 Low 로 바뀌는 상태
+	gpioA_Low(SDA);
+	Delay_ms(1);	
+	// SCL Low : 데이터를 넣기 위해서 SCL 을 Low 로 한 다음에 SCL 을 계속 High->Low 로 한다.
+	gpioA_Low(SCL); 
+	Delay_ms(1);	
+	// Device Address 8 bit :0xA0(Write bit[0] 포함) => 1 0 1 0_0 0 0 0
+	gpioA_High(SDA);  // 0 bit : 1
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 1 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_High(SDA);  // 2 bit : 1
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 3 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 4 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 5 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 6 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	gpioA_Low(SDA);  // 7 bit : 0
+	Delay_ms(1);
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//--------------------
+	// ACK
+	gpioA_High(SCL);  // SCL High
+	Delay_ms(1);
+	gpioA_Low(SCL);   // SCL Low
+	Delay_ms(1);
+	//---------
+	// Stop Condition
+	// gpioA_Low(SDA);  //  : 0
+	// Delay_ms(1);
+	// gpioA_High(SCL);  // SCL High
+	// Delay_ms(1);
+
+	//-------------------------------
+	// EEPROM Word Address(메모리 주소)
+	// 0x01 번지 : 0 0 0 0_0 0 0 1
+
+	for(i=0;i<8;i++)
+	{
+		// (0x01 << i) : 0 0 0 0_0 0 0 1 << 0 ==> 0 0 0 0_0 0 0 1 &
+		//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
+		//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
+		//										  0 0 0 0_0 0 0 1
+		if( (eeprom_addr & (0x01 << (7-i)) ) > 0)
+		{
+			GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA Set
+			Delay_ms(1);
+		}
+		else
+		{
+			GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Clear
+			Delay_ms(1);
+		}
+
+		// (0x01 << SCL) : 0x01 을 SCL(0) 만큼 좌쉬프트한다. => ( 0 0 0 0_0 0 0 1 << 0 ) ==> 0x01 값 자체이다.
+		// ( GPIOA->ODR | 0x01 ) 한 값을 GPIOA->ODR 에 대입한다.(GPIOA->ODR = GPIOA->ODR | 0x01)
+		// 복합대입연산자 를 이용해서 정리하면  [GPIOA->ODR |= (0x01 << SCL) ] 된다.
+		GPIOA->ODR |= (0x01 << SCL); // SCL High
+		Delay_ms(1);
+		GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+		Delay_ms(1);
+	}
+
+	// Address Ack Check
+	GPIOA->ODR |= (0x01 << SCL); // SCL High
+	Delay_ms(1);
+	GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+	Delay_ms(1);
+
+	//-------------------------------
+	// EEPROM Data (데이타)
+	// 0xAA 번지 : 1 0 1 0_0 0 0 0
+	i2c_byte_write(eeprom_data);
+
+	// for(i=0;i<8;i++)
+	// {
+	// 	// (0x01 << i) : 0 0 0 0_0 0 0 1 << 0 ==> 0 0 0 0_0 0 0 1 &
+	// 	//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
+	// 	//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
+	// 	//										  0 0 0 0_0 0 0 1
+	// 	if( (eeprom_data & (0x01 << (7-i)) ) > 0)
+	// 	{
+	// 		GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA Set
+	// 		Delay_ms(1);
+	// 	}
+	// 	else
+	// 	{
+	// 		GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Clear
+	// 		Delay_ms(1);
+	// 	}
+
+	// 	// (0x01 << SCL) : 0x01 을 SCL(0) 만큼 좌쉬프트한다. => ( 0 0 0 0_0 0 0 1 << 0 ) ==> 0x01 값 자체이다.
+	// 	// ( GPIOA->ODR | 0x01 ) 한 값을 GPIOA->ODR 에 대입한다.(GPIOA->ODR = GPIOA->ODR | 0x01)
+	// 	// 복합대입연산자 를 이용해서 정리하면  [GPIOA->ODR |= (0x01 << SCL) ] 된다.
+	// 	GPIOA->ODR |= (0x01 << SCL); // SCL High
+	// 	Delay_ms(1);
+	// 	GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+	// 	Delay_ms(1);
+	// }
+
+
+
+	// Data Ack Check
+	GPIOA->ODR |= (0x01 << SCL); // SCL High
+	Delay_ms(1);
+	GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+	Delay_ms(1);
+
+	//-------------------------------
+	// Stop : SDA 를 Low 로 하고, SCL 을 High 로 한 다음, SDA 를 High 하면 된다.
+
+	GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Low
+	Delay_ms(1);
+	GPIOA->ODR |= (0x01 << SCL); // SCL High
+	Delay_ms(1);
+	GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA High
+	Delay_ms(1);
+
+
+
+	while(1);
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	//currentMillis = CheckMillis();
+
+
+		digitalWriteBit(GPIO_A, 0, HIGH);
+		Delay_us(10);
+		digitalWriteBit(GPIO_A, 0, LOW);
+		Delay_us(10);
+
+	
+		// I2C ACK Check
+//		pinMode(GPIO_A, 1, INPUT);
+//		if(digitalReadBit(GPIO_A, 1))
+//				printf("I2C NACK..\n");
+//		else
+//				printf("I2C ACK..\n");
+//		}
+//		pinMode(GPIO_A, 1, OUTPUT);
+	
+	
+}
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+///////////////////////////////////////////////
+void aaa()
+{
+	tmp_a = 5;
+	printf("tmp_a = %d..\n",tmp_a);
+
+}
+
+///////////////////////////////////////////////
+// user function to be serviced when external interrupt-GPIOC.15 occur
+// called in EXTI IRQ Handler
+volatile void userFn15(void)
+{
+	printf("External Interrupt GPIOC.15.\n");
+}
+
+volatile void userFn14(void)
+{
+	printf("External Interrupt GPIOC.14.\n");
+}
+
+volatile void userFn13(void)
+{
+	printf("External Interrupt GPIOC.13.\n");
+}
+
+volatile void userFn12(void)
+{
+	printf("External Interrupt GPIOC.12.\n");
+}
+
+volatile void userFn11(void)
+{
+	printf("External Interrupt GPIOC.11.\n");
+}
+
+volatile void userFn10(void)
+{
+	if( digitalReadBit(GPIO_C, 10) ){
+		printf("External Interrupt GPIOC.10. ==> Key Down..\n");
+		digitalWriteBit(GPIO_A, 0, HIGH);
+	}
+	else{
+		printf("External Interrupt GPIOC.10. ==> Key Up..\n");
+		digitalWriteBit(GPIO_A, 0, LOW);
+	}
+}
+///////////////////////////////////////////////
+
+
+
+
+
+
+///////////////////////////////////////////////
+// user function to be serviced when timer2  interrupt occur
+// called in TIM2_IRQ Handler
+volatile void userFnTim2(void)
+{
+	state0 = !state0;
+	if(state0)
+		digitalWriteBit(GPIO_B, 0, HIGH);
+	else
+		digitalWriteBit(GPIO_B, 0, LOW);
+}
+
+// user function to be serviced when timer3  interrupt occur
+// called in TIM3_IRQ Handler
+volatile void userFnTim3(void)
+{
+	state1 = !state1;
+	if(state1)
+		digitalWriteBit(GPIO_B, 1, HIGH);
+	else
+		digitalWriteBit(GPIO_B, 1, LOW);
+}
+///////////////////////////////////////////////
+
+
+
+
+
+
+
+
+

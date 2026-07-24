@@ -56,5 +56,8 @@
     <Text Include="12_keil_I2C_gpio_from_start_to_stop_20260724.txt">
       <Filter>소스 파일</Filter>
     </Text>
+    <Text Include="13_keil_I2C_gpio_from_start_to_stop_while_20260724.txt">
+      <Filter>소스 파일</Filter>
+    </Text>
   </ItemGroup>
 </Project>
