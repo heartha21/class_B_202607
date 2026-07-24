@@ -124,7 +124,7 @@ void eeprom_byte_write(uint8_t data)
 		//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
 		//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
 		//										  0 0 0 0_0 0 0 1
-		if(data & (0x01 << (7-i)) > 0)
+		if( (data & (0x01 << (7-i)) ) > 0)
 		{
 			GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA Set
 		}
@@ -281,33 +281,33 @@ void loop()
 	//-------------------------------
 	// EEPROM Data (데이타)
 	// 0xAA 번지 : 1 0 1 0_0 0 0 0
-	// eeprom_byte_write(eeprom_data);
+	eeprom_byte_write(eeprom_data);
 
-	for(i=0;i<8;i++)
-	{
-		// (0x01 << i) : 0 0 0 0_0 0 0 1 << 0 ==> 0 0 0 0_0 0 0 1 &
-		//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
-		//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
-		//										  0 0 0 0_0 0 0 1
-		if( (eeprom_data & (0x01 << (7-i)) ) > 0)
-		{
-			GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA Set
-			Delay_ms(1);
-		}
-		else
-		{
-			GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Clear
-			Delay_ms(1);
-		}
+	// for(i=0;i<8;i++)
+	// {
+	// 	// (0x01 << i) : 0 0 0 0_0 0 0 1 << 0 ==> 0 0 0 0_0 0 0 1 &
+	// 	//				 0 0 0 0_0 0 0 1 << 1 ==> 0 0 0 0_0 0 1 0 &
+	// 	//				 0 0 0 0_0 0 0 1 << 2 ==> 0 0 0 0_0 1 0 0 &
+	// 	//										  0 0 0 0_0 0 0 1
+	// 	if( (eeprom_data & (0x01 << (7-i)) ) > 0)
+	// 	{
+	// 		GPIOA->ODR |= (0x01 << SDA);  // 0 : SDA Set
+	// 		Delay_ms(1);
+	// 	}
+	// 	else
+	// 	{
+	// 		GPIOA->ODR &= ~(0x01 << SDA);  // 0 : SDA Clear
+	// 		Delay_ms(1);
+	// 	}
 
-		// (0x01 << SCL) : 0x01 을 SCL(0) 만큼 좌쉬프트한다. => ( 0 0 0 0_0 0 0 1 << 0 ) ==> 0x01 값 자체이다.
-		// ( GPIOA->ODR | 0x01 ) 한 값을 GPIOA->ODR 에 대입한다.(GPIOA->ODR = GPIOA->ODR | 0x01)
-		// 복합대입연산자 를 이용해서 정리하면  [GPIOA->ODR |= (0x01 << SCL) ] 된다.
-		GPIOA->ODR |= (0x01 << SCL); // SCL High
-		Delay_ms(1);
-		GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
-		Delay_ms(1);
-	}
+	// 	// (0x01 << SCL) : 0x01 을 SCL(0) 만큼 좌쉬프트한다. => ( 0 0 0 0_0 0 0 1 << 0 ) ==> 0x01 값 자체이다.
+	// 	// ( GPIOA->ODR | 0x01 ) 한 값을 GPIOA->ODR 에 대입한다.(GPIOA->ODR = GPIOA->ODR | 0x01)
+	// 	// 복합대입연산자 를 이용해서 정리하면  [GPIOA->ODR |= (0x01 << SCL) ] 된다.
+	// 	GPIOA->ODR |= (0x01 << SCL); // SCL High
+	// 	Delay_ms(1);
+	// 	GPIOA->ODR &= ~(0x01 << SCL); // SCL Low
+	// 	Delay_ms(1);
+	// }
 
 
 
