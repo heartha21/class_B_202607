@@ -50,5 +50,8 @@
     <Text Include="10_cube_ide_ADC_1channel_20260723.txt">
       <Filter>소스 파일</Filter>
     </Text>
+    <Text Include="11_keil_I2C_gpio_20260724.txt">
+      <Filter>소스 파일</Filter>
+    </Text>
   </ItemGroup>
 </Project>
